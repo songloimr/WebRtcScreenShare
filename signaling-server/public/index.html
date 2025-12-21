@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
+        integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+
+<body>
+
+    <div class="relative overflow-hidden rounded-lg bg-gray-900 shadow-xl" style="width: 240px; height: 534px;">
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+            <button class="bg-blue-600 uppercase font-semibold text-white px-4 py-1 rounded-md shadow-md transition-all">Call</button>
+        </div>
+        <video autoplay="" playsinline="" class="h-full w-full object-cover absolute"></video>
+    </div>
+    <script>
+        const socket = io("http://localhost:3333");
+        socket.on("connect", () => {
+            console.log(socket.id);
+        });
+        socket.on("disconnect", () => {
+            console.error("Socket IO Disconnected");
+        });
+
+        const pc = new RTCPeerConnection({
+            iceServers: [{
+                urls: "stun:stun.services.mozilla.com:3478"
+            }],
+            bundlePolicy: "max-bundle"
+        });
+
+        pc.ontrack = (event) => {
+            console.log("ontrack", event.streams);
+
+            const localStream = new MediaStream();
+
+            event.streams[0].getVideoTracks().forEach(track => {
+                localStream.addTrack(track)
+            });
+            video.srcObject = localStream;
+        };
+        pc.onconnectionstatechange = (event) => {
+            console.log("onconnectionstatechange", pc.connectionState);
+        };
+        pc.onicegatheringstatechange = (event) => {
+            console.log("onicegatheringstatechange", pc.iceGatheringState);
+        };
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                console.info("onicecandidate", event.candidate);
+                const { candidate, sdpMLineIndex, sdpMid } = event.candidate;
+                socket.emit("ice", { candidate, sdpMLineIndex, sdpMid });
+            }
+        };
+
+        socket.on("ice", ({ candidate, sdpMLineIndex, sdpMid }) => {
+            console.log("addIceCandidate");
+            pc.addIceCandidate({ candidate, sdpMLineIndex, sdpMid });
+        });
+        socket.on("offer", async ({ sdp }) => {
+            console.log("setRemoteDescription");
+            await pc.setRemoteDescription({ type: "offer", sdp });
+
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            socket.emit("answer", { sdp: answer.sdp });
+        });
+
+        const video = document.querySelector('video');
+        const button = document.querySelector('button');
+        
+        button.addEventListener('click', async () => {
+            button.hidden = true;
+        });
+
+    </script>
+</body>
+
+</html>
