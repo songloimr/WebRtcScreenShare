@@ -37,7 +37,7 @@ class WebRTCManager(
     companion object {
         private const val TAG = "WebRTCManager"
         private const val VIDEO_TRACK_ID = "screen_video_track"
-        private const val TARGET_BITRATE_BPS = 2_000_000
+        private const val MIN_BITRATE_BPS = 2000_000
         private const val TARGET_FPS = 60
     }
 
@@ -58,15 +58,14 @@ class WebRTCManager(
         val initOptions = PeerConnectionFactory.InitializationOptions
             .builder(context)
             .setEnableInternalTracer(true)
-            .setFieldTrials("WebRTC-H264HighProfile/${PeerConnectionFactory.TRIAL_ENABLED}/")
             .createInitializationOptions()
         PeerConnectionFactory.initialize(initOptions)
 
-        // Create encoder/decoder factories with H264 preference
+        // Create encoder/decoder
         val encoderFactory = HardwareVideoEncoderFactory(
             eglBase.eglBaseContext,
             false, // enableIntelVp8Encoder
-            true  // enableH264HighProfile - prefer H264
+            false  // enableH264HighProfile
         )
         val decoderFactory = HardwareVideoDecoderFactory(eglBase.eglBaseContext)
 
@@ -90,7 +89,7 @@ class WebRTCManager(
 
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
-            sdpSemantics = PeerConnection.SdpSemantics.PLAN_B
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }
 
         // Create PeerConnection with observer
@@ -140,10 +139,7 @@ class WebRTCManager(
             it.setEnabled(true)
         }
 
-        val localStream = peerConnectionFactory.createLocalMediaStream("local_stream_video")
-        localStream.addTrack(videoTrack)
-
-        peerConnection?.addStream(localStream)
+        peerConnection?.addTrack(videoTrack)
 
         // Configure video encoding parameters
         configureVideoEncoding()
@@ -156,8 +152,7 @@ class WebRTCManager(
             if (sender.track()?.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) {
                 val parameters = sender.parameters
                 if (parameters.encodings.isNotEmpty()) {
-                    parameters.encodings[0].maxBitrateBps = TARGET_BITRATE_BPS
-                    parameters.encodings[0].minBitrateBps = TARGET_BITRATE_BPS
+                    parameters.encodings[0].minBitrateBps = MIN_BITRATE_BPS
                     parameters.encodings[0].maxFramerate = TARGET_FPS
 
                     sender.parameters = parameters
@@ -193,27 +188,7 @@ class WebRTCManager(
                 }, sdpConstraints)
             }
 
-            // SDP Munging
-            var modifiedSdp: String = ""
-            val regex = Pattern.compile("a=rtpmap:([0-9]+) H264/([0-9]+)")
-            val codecMatcher = regex.matcher(offer.description)
-            if (codecMatcher.find()) {
-                val codecRtpMap = codecMatcher.group(1)
-                modifiedSdp = offer.description.split(System.lineSeparator()).filterNot {
-                    it.startsWith("a=extmap") || it.startsWith("a=rtpmap") && !it.contains(":$codecRtpMap") || it.startsWith(
-                        "a=rtcp-fb"
-                    ) && !it.contains(":$codecRtpMap") || it.startsWith("a=fmtp") && !it.contains(":$codecRtpMap")
-                }.toMutableList().also {
-                    it.add(10, "b=AS:${TARGET_BITRATE_BPS / 1000}")
-                    it.add(11, "b=TIAS:${TARGET_BITRATE_BPS}")
-                }.joinToString(separator = System.lineSeparator()) {
-                    if (it.startsWith("m=video")) {
-                        it.split(" ").subList(0, 3).joinToString(" ") + " $codecRtpMap"
-                    } else {
-                        it
-                    }
-                }
-            }
+            val modifiedSdp = mungeSdp(offer.description)
             val modifiedOffer = SessionDescription(offer.type, modifiedSdp)
 
             // Set local description
@@ -239,7 +214,7 @@ class WebRTCManager(
             Result.failure(e)
         }
     }
-    
+
     fun setRemoteAnswer(sdp: String) {
         val pc = peerConnection ?: run {
             Log.e(TAG, "setRemoteAnswer: PeerConnection not created")
@@ -261,7 +236,7 @@ class WebRTCManager(
             override fun onCreateFailure(error: String?) {}
         }, sessionDescription)
     }
-    
+
     fun addIceCandidate(candidate: IceCandidate) {
         val pc = peerConnection ?: run {
             Log.e(TAG, "addIceCandidate: PeerConnection not created")
@@ -270,6 +245,57 @@ class WebRTCManager(
 
         pc.addIceCandidate(candidate)
         Log.d(TAG, "ICE candidate added: ${candidate.sdp}")
+    }
+
+    private fun mungeSdp(originalSdp: String): String {
+        data class CodecInfo(val name: String, val pattern: Pattern, val priority: Int)
+
+        val codecPriorities = listOf(
+            CodecInfo("AV1", Pattern.compile("a=rtpmap:([0-9]+) AV1/([0-9]+)"), 1),
+            CodecInfo("H265", Pattern.compile("a=rtpmap:([0-9]+) H265/([0-9]+)"), 2),
+            CodecInfo("H264", Pattern.compile("a=rtpmap:([0-9]+) H264/([0-9]+)"), 3)
+        )
+
+        var selectedCodecIds = mutableListOf<String>()
+        var selectedCodecName: String
+
+        for (codecInfo in codecPriorities) {
+            val matcher = codecInfo.pattern.matcher(originalSdp)
+            val codecIds = mutableListOf<String>()
+
+            while (matcher.find()) {
+                matcher.group(1)?.let { codecIds.add(it) }
+            }
+
+            if (codecIds.isNotEmpty()) {
+                selectedCodecIds = codecIds
+                selectedCodecName = codecInfo.name
+                Log.d(TAG, "Selected codec: $selectedCodecName with IDs: $selectedCodecIds")
+                break
+            }
+        }
+
+        if (selectedCodecIds.isEmpty()) {
+            Log.d(TAG, "No preferred codecs found, skipping SDP munging")
+            return originalSdp
+        }
+
+        val modifiedSdp = originalSdp.split(System.lineSeparator()).filterNot {
+            it.startsWith("a=extmap") ||
+                    (it.startsWith("a=rtpmap") && selectedCodecIds.none { id -> it.contains(":$id ") }) ||
+                    (it.startsWith("a=rtcp-fb") && selectedCodecIds.none { id -> it.contains(":$id ") }) ||
+                    (it.startsWith("a=fmtp") && selectedCodecIds.none { id -> it.contains(":$id ") })
+        }.toMutableList()
+            .joinToString(separator = System.lineSeparator()) { line ->
+                if (line.startsWith("m=video")) {
+                    val parts = line.split(" ")
+                    "${parts[0]} ${parts[1]} ${parts[2]} ${selectedCodecIds.joinToString(" ")}"
+                } else {
+                    line
+                }
+            }
+
+        return modifiedSdp
     }
 
     fun close() {

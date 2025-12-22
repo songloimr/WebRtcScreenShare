@@ -35,14 +35,14 @@
             bundlePolicy: "max-bundle"
         });
 
+        let isRemoteDescriptionSet = false;
+        const pendingIceCandidates = [];
+
         pc.ontrack = (event) => {
-            console.log("ontrack", event.streams);
+            console.log("ontrack", event.track);
 
             const localStream = new MediaStream();
-
-            event.streams[0].getVideoTracks().forEach(track => {
-                localStream.addTrack(track)
-            });
+            localStream.addTrack(event.track);
             video.srcObject = localStream;
         };
         pc.onconnectionstatechange = (event) => {
@@ -59,18 +59,53 @@
             }
         };
 
-        socket.on("ice", ({ candidate, sdpMLineIndex, sdpMid }) => {
-            console.log("addIceCandidate");
-            pc.addIceCandidate({ candidate, sdpMLineIndex, sdpMid });
+        async function addIceCandidateSafely(candidate, sdpMLineIndex, sdpMid) {
+            try {
+                if (isRemoteDescriptionSet) {
+                    await pc.addIceCandidate({ candidate, sdpMLineIndex, sdpMid });
+                } else {
+                    pendingIceCandidates.push({ candidate, sdpMLineIndex, sdpMid });
+                }
+            } catch (error) {
+                console.error("Error adding ICE candidate:", error);
+            }
+        }
+
+        async function applyPendingIceCandidates() {
+            console.log(`Applying ${pendingIceCandidates.length} buffered ICE candidates`);
+            for (const iceData of pendingIceCandidates) {
+                try {
+                    await pc.addIceCandidate(iceData);
+                    console.log("Applied buffered ICE candidate");
+                } catch (error) {
+                    console.error("Error applying buffered ICE candidate:", error);
+                }
+            }
+            pendingIceCandidates.length = 0;
+        }
+
+        socket.on("ice", async ({ candidate, sdpMLineIndex, sdpMid }) => {
+            console.log("Received ICE candidate from peer");
+            await addIceCandidateSafely(candidate, sdpMLineIndex, sdpMid);
         });
         socket.on("offer", async ({ sdp }) => {
             console.log("setRemoteDescription");
-            await pc.setRemoteDescription({ type: "offer", sdp });
+            try {
+                await pc.setRemoteDescription({ type: "offer", sdp });
+                isRemoteDescriptionSet = true;
+                console.log("Remote description set successfully");
+                
+                // Apply any buffered ICE candidates
+                await applyPendingIceCandidates();
+                isRemoteDescriptionSet = false;
+                
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
 
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-
-            socket.emit("answer", { sdp: answer.sdp });
+                socket.emit("answer", { sdp: answer.sdp });
+            } catch (error) {
+                console.error("Error setting remote description:", error);
+            }
         });
 
         const video = document.querySelector('video');
