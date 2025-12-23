@@ -8,12 +8,14 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import com.songloimr.webrtcscreenshare.manager.ConnectionStateManager
 import com.songloimr.webrtcscreenshare.manager.SignalingManager
 import com.songloimr.webrtcscreenshare.manager.WebRTCManager
@@ -61,7 +63,7 @@ class ScreenRecordingService : Service() {
     private var isRecording = false
     private var isInitialized = false
 
-    private lateinit var signalingManager: SignalingManager
+    private var signalingManager: SignalingManager? = null
     private lateinit var webRTCManager: WebRTCManager
     private lateinit var connectionStateManager: ConnectionStateManager
 
@@ -131,34 +133,40 @@ class ScreenRecordingService : Service() {
     }
 
     private fun startConnection(intent: Intent?) {
-        webRTCManager = WebRTCManager(
-            context = this,
-            onLocalIceCandidate = { candidate ->
-                Log.d(TAG, "Local ICE candidate generated")
-                signalingManager.emitIceCandidate(
-                    candidate = candidate.sdp,
-                    sdpMLineIndex = candidate.sdpMLineIndex,
-                    sdpMid = candidate.sdpMid
+        synchronized(this) {
+
+            if (!this::webRTCManager.isInitialized) {
+                webRTCManager = WebRTCManager(
+                    context = this,
+                    onLocalIceCandidate = { candidate ->
+                        signalingManager?.emitIceCandidate(
+                            candidate.sdp,
+                            candidate.sdpMLineIndex,
+                            candidate.sdpMid
+                        )
+                    },
+                    onConnectionStateChange = { state ->
+                        Log.d(TAG, "WebRTC connection state changed: $state")
+                        connectionStateManager.setState(state)
+                    },
                 )
-            },
-            onConnectionStateChange = { state ->
-                Log.d(TAG, "WebRTC connection state changed: $state")
-                connectionStateManager.setState(state)
             }
-        ).apply {
-            isRecording = true
-            initialize()
-            createPeerConnection(intent!!)
-            serviceScope.launch {
-                val offer = createOffer().getOrThrow()
-                signalingManager.emitOffer(offer)
+
+            if (webRTCManager.peerConnection != null) {
+                Log.d(TAG, "Already recording, cleaning up old connection first")
+                cleanupConnection()
+            }
+            webRTCManager.apply {
+                createPeerConnection(intent!!)
+                serviceScope.launch {
+                    val offer = createOffer().getOrThrow()
+                    signalingManager?.emitOffer(offer)
+                }
             }
         }
     }
 
     private fun handleStartService() {
-        observeConnectionState()
-
         connectionStateManager = ConnectionStateManager()
         signalingManager = SignalingManager(
             onConnected = {
@@ -172,11 +180,9 @@ class ScreenRecordingService : Service() {
                 }
             },
             onAnswer = { sdp ->
-                Log.d(TAG, "Answer received, setting remote description")
                 webRTCManager.setRemoteAnswer(sdp)
             },
             onIceCandidate = { iceMessage ->
-                Log.d(TAG, "ICE candidate received")
                 val candidate = IceCandidate(
                     iceMessage.sdpMid,
                     iceMessage.sdpMLineIndex,
@@ -201,7 +207,7 @@ class ScreenRecordingService : Service() {
                 connectionStateManager.setState(ConnectionState.Error(exception))
             }
         ).apply {
-            connect("https://e3813a3ba659.ngrok-free.app")
+            connect("https://32e160303c09.ngrok-free.app")
         }
         observeConnectionState()
     }
@@ -214,20 +220,32 @@ class ScreenRecordingService : Service() {
                 when (state) {
                     is ConnectionState.Connected -> {
                         isRecording = true
+                        serviceScope.launch(Dispatchers.Main) {
+                            Toast.makeText(
+                                this@ScreenRecordingService,
+                                "Screen sharing started",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
 
                     is ConnectionState.Disconnected -> {
-                        webRTCManager.close()
-                        isRecording = false
+                        cleanupConnection()
+                        serviceScope.launch(Dispatchers.Main) {
+                            Toast.makeText(
+                                this@ScreenRecordingService,
+                                "Disconnected: ${state.reason}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
 
                     is ConnectionState.Error -> {
-                        isRecording = false
+                        cleanupConnection()
                         Log.e(TAG, "Connection error: ${state.exception.message}")
                     }
 
                     else -> {
-                        // Idle, Connecting
                     }
                 }
             }
@@ -280,8 +298,7 @@ class ScreenRecordingService : Service() {
         if (this::webRTCManager.isInitialized) {
             webRTCManager.release()
         }
-
-        signalingManager.disconnect()
+        signalingManager?.disconnect()
         serviceScope.cancel()
     }
 

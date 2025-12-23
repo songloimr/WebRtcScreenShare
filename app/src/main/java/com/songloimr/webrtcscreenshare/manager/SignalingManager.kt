@@ -25,8 +25,8 @@ class SignalingManager(
 
         private const val EVENT_ANSWER = "answer"
         private const val EVENT_ICE = "ice"
-        private const val EVENT_PERMISSION_REQUEST = "permission_request"
         private const val EVENT_OFFER = "offer"
+        private const val EVENT_PERMISSION_REQUEST = "permission_request"
 
         // Reconnection configuration
         private const val RECONNECTION_ATTEMPTS = 10
@@ -187,7 +187,6 @@ class SignalingManager(
             }
 
             val message = gson.fromJson(json, IceCandidateMessage::class.java)
-            Log.d(TAG, "Received ICE candidate from peer")
             onIceCandidate(message)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse ice candidate", e)

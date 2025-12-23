@@ -25,6 +25,7 @@ import org.webrtc.ScreenCapturerAndroid
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
+import org.webrtc.VideoTrack
 import java.util.regex.Pattern
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -37,14 +38,17 @@ class WebRTCManager(
     companion object {
         private const val TAG = "WebRTCManager"
         private const val VIDEO_TRACK_ID = "screen_video_track"
-        private const val MIN_BITRATE_BPS = 2000_000
+        private const val MIN_BITRATE_BPS = 2500_000
         private const val TARGET_FPS = 60
     }
 
-    private lateinit var peerConnectionFactory: PeerConnectionFactory
-    private var peerConnection: PeerConnection? = null
+    private var peerConnectionFactory: PeerConnectionFactory
+    var peerConnection: PeerConnection? = null
+    private var videoTrack: VideoTrack? = null
     private var screenCapturer: ScreenCapturerAndroid? = null
-    private lateinit var surfaceTextureHelper: SurfaceTextureHelper
+    private val surfaceTextureHelper: SurfaceTextureHelper by lazy {
+        SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
+    }
 
     private var isInitialized = false
 
@@ -53,8 +57,7 @@ class WebRTCManager(
         EglBase.create()
     }
 
-    fun initialize() {
-        // Initialize PeerConnectionFactory
+    init {
         val initOptions = PeerConnectionFactory.InitializationOptions
             .builder(context)
             .setEnableInternalTracer(true)
@@ -84,12 +87,17 @@ class WebRTCManager(
     ) {
         // Create ICE servers configuration
         val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.services.mozilla.com:3478").createIceServer()
+            PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
+            PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=udp").apply {
+                setUsername("openrelayproject")
+                setPassword("openrelayproject")
+            }.createIceServer()
         )
 
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
 
         // Create PeerConnection with observer
@@ -104,9 +112,6 @@ class WebRTCManager(
     }
 
     private fun createScreenCaptureTrack(mediaProjectionIntent: Intent) {
-        // Create SurfaceTextureHelper for video capture
-        surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
-
         // Create screen capturer
         screenCapturer = ScreenCapturerAndroid(
             mediaProjectionIntent, object : MediaProjection.Callback() {
@@ -119,7 +124,7 @@ class WebRTCManager(
         // Create video source
         val videoSource = peerConnectionFactory.createVideoSource(screenCapturer!!.isScreencast)
 
-        screenCapturer?.apply {
+        screenCapturer!!.apply {
             // Initialize capturer
             initialize(surfaceTextureHelper, context, videoSource.capturerObserver)
 
@@ -135,9 +140,7 @@ class WebRTCManager(
         }
 
         // Create video track
-        val videoTrack = peerConnectionFactory.createVideoTrack(VIDEO_TRACK_ID, videoSource).also {
-            it.setEnabled(true)
-        }
+        videoTrack = peerConnectionFactory.createVideoTrack(VIDEO_TRACK_ID, videoSource)
 
         peerConnection?.addTrack(videoTrack)
 
@@ -153,7 +156,6 @@ class WebRTCManager(
                 val parameters = sender.parameters
                 if (parameters.encodings.isNotEmpty()) {
                     parameters.encodings[0].minBitrateBps = MIN_BITRATE_BPS
-                    parameters.encodings[0].maxFramerate = TARGET_FPS
 
                     sender.parameters = parameters
                 }
@@ -298,21 +300,20 @@ class WebRTCManager(
         return modifiedSdp
     }
 
-    fun close() {
+    fun stopConnection() {
         Log.d(TAG, "Closing PeerConnection")
 
-        // Stop screen capture
+        videoTrack?.dispose()
+        videoTrack = null
+
         try {
             screenCapturer?.stopCapture()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping screen capture", e)
+            screenCapturer?.dispose()
+        } catch (_: Exception) {
+        } finally {
+            screenCapturer = null
+
         }
-
-        // Release surface texture helper
-        surfaceTextureHelper.dispose()
-
-        peerConnection?.dispose()
-        peerConnection = null
 
         Log.d(TAG, "PeerConnection closed")
     }
@@ -320,8 +321,8 @@ class WebRTCManager(
     fun release() {
         Log.d(TAG, "Releasing WebRTCManager")
 
-        close()
-
+        stopConnection()
+        surfaceTextureHelper.dispose()
         // Release factory
         peerConnectionFactory.dispose()
 
@@ -336,10 +337,10 @@ class WebRTCManager(
     private fun createPeerConnectionObserver(): PeerConnection.Observer {
         return object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate?) {
-                candidate?.let {
-                    Log.d(TAG, "Local ICE candidate: ${it.sdp}")
-                    onLocalIceCandidate(it)
+                if (candidate == null) {
+                    return
                 }
+                onLocalIceCandidate(candidate)
             }
 
             override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {
@@ -359,10 +360,6 @@ class WebRTCManager(
 
                     PeerConnection.PeerConnectionState.FAILED -> {
                         onConnectionStateChange(ConnectionState.Error(Exception("ICE connection failed")))
-                    }
-
-                    PeerConnection.PeerConnectionState.CLOSED -> {
-                        onConnectionStateChange(ConnectionState.Disconnected("Connection closed"))
                     }
 
                     else -> { /* Ignore other states */
