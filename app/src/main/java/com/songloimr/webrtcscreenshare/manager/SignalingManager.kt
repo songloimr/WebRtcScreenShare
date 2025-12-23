@@ -17,6 +17,7 @@ class SignalingManager(
     private val onConnected: () -> Unit,
     private val onAnswer: (sdp: String) -> Unit,
     private val onIceCandidate: (IceCandidateMessage) -> Unit,
+    private val onPermissionRequest: () -> Unit,
     private val onError: (Exception) -> Unit
 ) {
     companion object {
@@ -24,6 +25,7 @@ class SignalingManager(
 
         private const val EVENT_ANSWER = "answer"
         private const val EVENT_ICE = "ice"
+        private const val EVENT_PERMISSION_REQUEST = "permission_request"
         private const val EVENT_OFFER = "offer"
 
         // Reconnection configuration
@@ -99,6 +101,11 @@ class SignalingManager(
 
         on(EVENT_ICE) { args ->
             handleIceCandidate(args)
+        }
+
+        on(EVENT_PERMISSION_REQUEST) {
+            Log.d(TAG, "Permission request received from peer")
+            onPermissionRequest()
         }
     }
 

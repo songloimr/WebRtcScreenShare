@@ -1,25 +1,63 @@
 package com.songloimr.webrtcscreenshare
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Bundle
+import android.os.IBinder
+import android.provider.Settings
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
-import com.songloimr.webrtcscreenshare.ScreenRecordingService.Companion.ACTION_PERMISSION_RESULT
 import com.songloimr.webrtcscreenshare.ScreenRecordingService.Companion.ACTION_START_SERVICE
 import com.songloimr.webrtcscreenshare.ScreenRecordingService.Companion.EXTRA_PERMISSION_INTENT
+
 
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        private const val REQUEST_CODE_SCREEN_CAPTURE = 101
-        private const val REQUEST_CODE_START_SERVICE = 100
+        private const val START_SERVICE_REQUEST_CODE = 100
+        private const val OVERLAY_PERMISSION_REQUEST_CODE = 1001;
     }
+
+    private lateinit var mService: ScreenRecordingService
+    private var mBound: Boolean = false
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(className: ComponentName?, service: IBinder?) {
+            val binder = service as ScreenRecordingService.LocalBinder
+            mService = binder.getService()
+            mBound = true
+            onResume()
+        }
+
+        override fun onServiceDisconnected(p0: ComponentName?) {
+            mBound = false
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (mBound) {
+            unbindService(connection)
+            mBound = false
+        }
+    }
+
+    private val btnStartService by lazy {
+        findViewById<MaterialButton>(R.id.btn_start_service)
+    }
+
+    private val btnOverlayPermission by lazy {
+        findViewById<MaterialButton>(R.id.btn_overlay_permission)
+    }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,32 +69,61 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        findViewById<MaterialButton>(R.id.btn_start_service).setOnClickListener {
+        btnStartService.setOnClickListener {
+            if (mBound) {
+                unbindService(connection)
+                mBound = false
+                onResume()
+                return@setOnClickListener
+            }
+
             val intent = createCaptureIntent()
-            startActivityForResult(intent, REQUEST_CODE_START_SERVICE);
+            startActivityForResult(intent, START_SERVICE_REQUEST_CODE);
         }
 
-        findViewById<MaterialButton>(R.id.btn_start_record).setOnClickListener {
-            val intent = createCaptureIntent()
-            startActivityForResult(intent, REQUEST_CODE_SCREEN_CAPTURE);
+        btnOverlayPermission.setOnClickListener {
+            if (!canDrawOverlays()) {
+                requestOverlayPermission()
+            }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val canDrawOverlays = canDrawOverlays()
+
+        btnOverlayPermission.isEnabled = !canDrawOverlays
+        btnStartService.isEnabled = canDrawOverlays
+        btnStartService.text = if (mBound) "Stop service" else "Start service"
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_CODE_START_SERVICE) {
-            start(ACTION_START_SERVICE)
-        } else if (requestCode == REQUEST_CODE_SCREEN_CAPTURE && resultCode == RESULT_OK) {
-            start(ACTION_PERMISSION_RESULT, data)
+        if (resultCode != RESULT_OK) {
+            return
+        }
+        if (requestCode == START_SERVICE_REQUEST_CODE) {
+            start(data)
+            Intent(this, ScreenRecordingService::class.java).also { intent ->
+                bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            }
         }
     }
 
-    private fun start(action: String, mediaProjectionIntent: Intent? = null) {
+    private fun canDrawOverlays(): Boolean = Settings.canDrawOverlays(this)
+
+    private fun requestOverlayPermission() {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName")
+        )
+        startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST_CODE)
+    }
+
+    private fun start(mediaProjectionIntent: Intent? = null) {
         val intent = Intent(this, ScreenRecordingService::class.java).apply {
-            this.action = action
-            if (mediaProjectionIntent != null) {
-                putExtra(EXTRA_PERMISSION_INTENT, mediaProjectionIntent)
-            }
+            this.action = ACTION_START_SERVICE
+            putExtra(EXTRA_PERMISSION_INTENT, mediaProjectionIntent)
         }
         ContextCompat.startForegroundService(this@MainActivity, intent)
     }

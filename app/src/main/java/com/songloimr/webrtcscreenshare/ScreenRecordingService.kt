@@ -49,6 +49,15 @@ class ScreenRecordingService : Service() {
 
     val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    private var binder = LocalBinder()
+
+    inner class LocalBinder : Binder() {
+        fun getService(): ScreenRecordingService = this@ScreenRecordingService
+    }
+
+    private var mediaProjectionIntent: Intent? = null
+
+    @Volatile
     private var isRecording = false
     private var isInitialized = false
 
@@ -76,21 +85,49 @@ class ScreenRecordingService : Service() {
             isInitialized = true
         }
 
-        if (intent?.action === ACTION_PERMISSION_RESULT && !isRecording) {
-            val permissionIntent: Intent? =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(EXTRA_PERMISSION_INTENT, Intent::class.java)
-                } else {
-                    intent.getParcelableExtra(EXTRA_PERMISSION_INTENT)
+        when (intent?.action) {
+            ACTION_START_SERVICE -> {
+                mediaProjectionIntent = parsePermissionIntent(intent)
+            }
+
+            ACTION_PERMISSION_RESULT -> {
+                parsePermissionIntent(intent)?.let {
+                    mediaProjectionIntent = it
+                    startConnection(it)
                 }
+            }
 
-            startConnection(permissionIntent)
-
-            Log.d(TAG, "Permission result received: hasIntent=${permissionIntent != null}")
+            else -> Log.w(TAG, "Unknown action: ${intent?.action}")
         }
 
         return START_STICKY
+    }
 
+    private fun parsePermissionIntent(intent: Intent?): Intent? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra(EXTRA_PERMISSION_INTENT, Intent::class.java)
+        } else {
+            intent?.getParcelableExtra(EXTRA_PERMISSION_INTENT)
+        }
+    }
+
+    private fun requestPermissionFromActivity() {
+        val intent = Intent(this, TransparentActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ContextCompat.startActivity(this, intent, null)
+    }
+
+    private fun cleanupConnection() {
+        synchronized(this) {
+            Log.d(TAG, "Cleaning up connection")
+
+            webRTCManager.stopConnection()
+            isRecording = false
+
+            Log.d(TAG, "Connection cleanup completed")
+        }
     }
 
     private fun startConnection(intent: Intent?) {
@@ -147,6 +184,18 @@ class ScreenRecordingService : Service() {
                 )
                 webRTCManager.addIceCandidate(candidate)
             },
+            onPermissionRequest = {
+                Log.d(TAG, "Permission request received from peer")
+                if (isRecording) {
+                    return@SignalingManager
+                }
+
+                if (mediaProjectionIntent == null || Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU) {
+                    requestPermissionFromActivity()
+                } else {
+                    startConnection(mediaProjectionIntent)
+                }
+            },
             onError = { exception ->
                 Log.e(TAG, "Signaling error: ${exception.message}")
                 connectionStateManager.setState(ConnectionState.Error(exception))
@@ -154,6 +203,7 @@ class ScreenRecordingService : Service() {
         ).apply {
             connect("https://e3813a3ba659.ngrok-free.app")
         }
+        observeConnectionState()
     }
 
     private fun observeConnectionState() {
@@ -235,5 +285,12 @@ class ScreenRecordingService : Service() {
         serviceScope.cancel()
     }
 
-    override fun onBind(intent: Intent): IBinder? = null
+    override fun onBind(intent: Intent): IBinder {
+        return binder
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        stopSelf()
+        return super.onUnbind(intent)
+    }
 }
