@@ -23,6 +23,9 @@ io.on("connection", (socket) => {
     socket.on("ice", (candidate) => {
         socket.broadcast.emit("ice", candidate);
     })
+    socket.on("permission_request", () => {
+        socket.broadcast.emit("permission_request");
+    })
 });
 
 httpServer.listen(3333);

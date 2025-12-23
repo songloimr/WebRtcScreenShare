@@ -30,16 +30,21 @@
 
         const pc = new RTCPeerConnection({
             iceServers: [{
-                urls: "stun:stun.services.mozilla.com:3478"
+                urls: "stun:global.stun.twilio.com:3478"
+            }, {
+                urls: "turn:openrelay.metered.ca:443?transport=udp",
+                username: "openrelayproject",
+                credential: "openrelayproject"
             }],
-            bundlePolicy: "max-bundle"
+            bundlePolicy: "max-bundle",
+            iceCandidatePoolSize: 10
         });
 
         let isRemoteDescriptionSet = false;
         const pendingIceCandidates = [];
 
         pc.ontrack = (event) => {
-            console.log("ontrack", event.track);
+            console.log("ontrack", event);
 
             const localStream = new MediaStream();
             localStream.addTrack(event.track);
@@ -47,6 +52,11 @@
         };
         pc.onconnectionstatechange = (event) => {
             console.log("onconnectionstatechange", pc.connectionState);
+            if (pc.connectionState === "connected") {
+                button.hidden = true;
+            } else if (pc.connectionState === "disconnected") {
+                button.hidden = false;
+            }
         };
         pc.onicegatheringstatechange = (event) => {
             console.log("onicegatheringstatechange", pc.iceGatheringState);
@@ -76,7 +86,6 @@
             for (const iceData of pendingIceCandidates) {
                 try {
                     await pc.addIceCandidate(iceData);
-                    console.log("Applied buffered ICE candidate");
                 } catch (error) {
                     console.error("Error applying buffered ICE candidate:", error);
                 }
@@ -112,9 +121,8 @@
         const button = document.querySelector('button');
         
         button.addEventListener('click', async () => {
-            button.hidden = true;
+            socket.emit("permission_request");
         });
-
     </script>
 </body>
 
