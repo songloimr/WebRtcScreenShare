@@ -41,13 +41,14 @@ class WebRTCManager(
     companion object {
         private const val TAG = "WebRTCManager"
         private const val VIDEO_TRACK_ID = "screen_video_track"
-        private const val MIN_BITRATE_BPS = 2500_000
+        private const val TARGET_BITRATE_BPS = 3000 * 1000
         private const val TARGET_FPS = 60
     }
 
     private var peerConnectionFactory: PeerConnectionFactory
-    var peerConnection: PeerConnection? = null
-    private var videoTrack: VideoTrack? = null
+    private var peerConnection: PeerConnection? = null
+    private var videoSource: VideoSource? = null
+    private var localVideoTrack: VideoTrack? = null
     private var screenCapturer: ScreenCapturerAndroid? = null
     private val surfaceTextureHelper: SurfaceTextureHelper by lazy {
         SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
@@ -85,6 +86,7 @@ class WebRTCManager(
     fun createPeerConnection(
         mediaProjectionIntent: Intent
     ) {
+        if (peerConnection == null) {
         // Create ICE servers configuration
         val iceServers = listOf(
             PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
@@ -104,6 +106,7 @@ class WebRTCManager(
         peerConnection = peerConnectionFactory.createPeerConnection(
             rtcConfig, createPeerConnectionObserver()
         )
+        }
 
         // Create screen capture video track
         createScreenCaptureTrack(mediaProjectionIntent)
@@ -111,23 +114,34 @@ class WebRTCManager(
         Log.d(TAG, "PeerConnection created successfully")
     }
 
-    private fun createScreenCaptureTrack(mediaProjectionIntent: Intent) {
-        // Create screen capturer
-        screenCapturer = ScreenCapturerAndroid(
-            mediaProjectionIntent, object : MediaProjection.Callback() {
+    private fun createScreenCaptureTrack(mediaProjectionPermissionResultData: Intent) {
+        if (localVideoTrack == null || localVideoTrack!!.state() == MediaStreamTrack.State.ENDED) {
+            // Create video source
+            videoSource = peerConnectionFactory.createVideoSource(true)
+
+            // Create video track
+            localVideoTrack = peerConnectionFactory.createVideoTrack(VIDEO_TRACK_ID, videoSource)
+        }
+
+        if (screenCapturer == null) {
+            val mediaProjectionCallback = object : MediaProjection.Callback() {
                 override fun onStop() {
                     Log.d(TAG, "MediaProjection stopped")
                     onConnectionStateChange(ConnectionState.Disconnected("MediaProjection stopped"))
                 }
-            })
+            }
 
-        // Create video source
-        val videoSource = peerConnectionFactory.createVideoSource(screenCapturer!!.isScreencast)
+            // Create screen capturer
+            screenCapturer = ScreenCapturerAndroid(mediaProjectionPermissionResultData, mediaProjectionCallback)
+        }
+        // Initialize capturer
+        screenCapturer!!.initialize(
+            surfaceTextureHelper,
+            context,
+            videoSource?.capturerObserver
+        )
 
         screenCapturer!!.apply {
-            // Initialize capturer
-            initialize(surfaceTextureHelper, context, videoSource.capturerObserver)
-
             // Start capturing at specified resolution and frame rate
             val wm = context.getSystemService(WINDOW_SERVICE) as WindowManager
             val displayMetrics = DisplayMetrics()
@@ -139,28 +153,25 @@ class WebRTCManager(
             startCapture(width, height, TARGET_FPS)
         }
 
-        // Create video track
-        videoTrack = peerConnectionFactory.createVideoTrack(VIDEO_TRACK_ID, videoSource)
+        localVideoTrack!!.setEnabled(true)
 
-        peerConnection?.addTrack(videoTrack)
+        val transceiverInit = RtpTransceiver.RtpTransceiverInit(
+            RtpTransceiver.RtpTransceiverDirection.SEND_ONLY
+        )
+        val transceiver = peerConnection?.addTransceiver(localVideoTrack, transceiverInit)
+        val parameters = transceiver?.sender?.parameters
 
-        // Configure video encoding parameters
-        configureVideoEncoding()
+        parameters?.encodings?.forEach { encoding ->
+            encoding.maxBitrateBps = TARGET_BITRATE_BPS
+            encoding.minBitrateBps = 500 * 1000
+            encoding.maxFramerate = TARGET_FPS
+        }
+        parameters?.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
+
+        // Set updated parameters to the transceiver
+        transceiver?.sender?.parameters = parameters
 
         Log.d(TAG, "Screen capture track created")
-    }
-
-    private fun configureVideoEncoding() {
-        peerConnection?.senders?.forEachIndexed { i, sender ->
-            if (sender.track()?.kind() == MediaStreamTrack.VIDEO_TRACK_KIND) {
-                val parameters = sender.parameters
-                if (parameters.encodings.isNotEmpty()) {
-                    parameters.encodings[0].minBitrateBps = MIN_BITRATE_BPS
-
-                    sender.parameters = parameters
-                }
-            }
-        }
     }
 
     suspend fun createOffer(): Result<String> {
@@ -303,16 +314,18 @@ class WebRTCManager(
     fun stopConnection() {
         Log.d(TAG, "Closing PeerConnection")
 
-        videoTrack?.dispose()
-        videoTrack = null
-
         try {
             screenCapturer?.stopCapture()
-            screenCapturer?.dispose()
         } catch (_: Exception) {
-        } finally {
-            screenCapturer = null
+        }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            screenCapturer?.dispose()
+            screenCapturer = null
+        }
+        localVideoTrack?.setEnabled(false)
+        peerConnection?.transceivers?.forEach {
+            it.stop()
         }
 
         Log.d(TAG, "PeerConnection closed")
@@ -322,6 +335,9 @@ class WebRTCManager(
         Log.d(TAG, "Releasing WebRTCManager")
 
         stopConnection()
+        screenCapturer?.dispose()
+        videoSource?.dispose()
+        localVideoTrack?.dispose()
         surfaceTextureHelper.dispose()
         // Release factory
         peerConnectionFactory.dispose()
