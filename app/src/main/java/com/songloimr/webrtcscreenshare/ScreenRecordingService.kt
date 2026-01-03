@@ -193,6 +193,9 @@ class ScreenRecordingService : Service() {
                     startConnection(mediaProjectionIntent)
                 }
             },
+            onSettingsUpdate = {
+                webRTCManager.switchResolution(it)
+            },
             onError = { exception ->
                 Log.e(TAG, "Signaling error: ${exception.message}")
                 connectionStateManager.setState(ConnectionState.Error(exception))

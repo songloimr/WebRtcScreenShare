@@ -5,6 +5,7 @@ import com.google.gson.Gson
 import com.songloimr.webrtcscreenshare.model.AnswerMessage
 import com.songloimr.webrtcscreenshare.model.IceCandidateMessage
 import com.songloimr.webrtcscreenshare.model.OfferMessage
+import com.songloimr.webrtcscreenshare.model.SettingsUpdateMessage
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONObject
@@ -18,6 +19,7 @@ class SignalingManager(
     private val onAnswer: (sdp: String) -> Unit,
     private val onIceCandidate: (IceCandidateMessage) -> Unit,
     private val onPermissionRequest: () -> Unit,
+    private val onSettingsUpdate: (SettingsUpdateMessage) -> Unit,
     private val onError: (Exception) -> Unit
 ) {
     companion object {
@@ -27,6 +29,7 @@ class SignalingManager(
         private const val EVENT_ICE = "ice"
         private const val EVENT_OFFER = "offer"
         private const val EVENT_PERMISSION_REQUEST = "permission_request"
+        private const val EVENT_SETTINGS_UPDATE = "settings_update"
 
         // Reconnection configuration
         private const val RECONNECTION_ATTEMPTS = 10
@@ -106,6 +109,33 @@ class SignalingManager(
         on(EVENT_PERMISSION_REQUEST) {
             Log.d(TAG, "Permission request received from peer")
             onPermissionRequest()
+        }
+
+        on(EVENT_SETTINGS_UPDATE) { args ->
+            handleSettingsUpdate(args)
+        }
+    }
+
+    private fun handleSettingsUpdate(args: Array<Any>) {
+        try {
+            val data = args.firstOrNull()
+            if (data == null) {
+                Log.w(TAG, "Received settings update with no data")
+                return
+            }
+
+            val json = when (data) {
+                is JSONObject -> data.toString()
+                is String -> data
+                else -> data.toString()
+            }
+
+            val message = gson.fromJson(json, SettingsUpdateMessage::class.java)
+            Log.d(TAG, "Received settings update $json")
+            onSettingsUpdate(message)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to handle settings update", e)
+            onError(kotlin.Exception("Failed to handle settings update: ${e.message}", e))
         }
     }
 

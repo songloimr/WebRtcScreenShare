@@ -8,6 +8,15 @@ data class OfferMessage(
     val sdp: String
 )
 
+data class SettingsUpdateMessage(
+    @SerializedName("quality")
+    val quality: Int,
+    @SerializedName("fps")
+    val fps: Int,
+    @SerializedName("bitrate")
+    val bitrate: Int
+)
+
 data class AnswerMessage(
     @SerializedName("sdp")
     val sdp: String

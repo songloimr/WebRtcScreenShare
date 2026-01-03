@@ -8,6 +8,7 @@
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
         integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
         crossorigin="anonymous"></script>
+    <link href='https://cdn.boxicons.com/3.0.6/fonts/basic/boxicons.min.css' rel='stylesheet'>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 
@@ -15,20 +16,28 @@
     <div class="flex flex-col lg:flex-row gap-6 items-start">
         <!-- Video Container -->
         <div class="relative overflow-hidden rounded-2xl bg-gray-900 shadow-2xl border border-gray-800"
-            style="width: 270px; height: 600px;">
+            style="width: 290px; height: 600px;">
             <div id="callOverlay" class="absolute inset-0 flex items-center justify-center z-10 bg-gray-900/80">
                 <button id="callBtn"
                     class="bg-blue-600 hover:bg-blue-700 uppercase font-semibold text-white px-6 py-2 rounded-lg shadow-lg transition-all flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
+                    <i class='bx bx-video'></i> 
                     Call
                 </button>
             </div>
-            <div id="statusBadge"
-                class="absolute top-3 left-3 z-20 px-2 py-1 rounded-full text-xs font-medium bg-gray-700 text-gray-300">
-                Disconnected
+            <div class="absolute top-3 left-3 z-20">
+                <div class="flex gap-2">
+                    <div id="statusBadge"
+                        class="px-2 py-1 rounded-full text-xs font-medium bg-gray-700 text-gray-300">
+                        Disconnected
+                    </div>
+                </div>
+                <div id="statsPanel"
+                    class="mt-2 bg-black/40 backdrop-blur-sm rounded-lg px-2 py-1 text-xs font-mono text-white hidden">
+                    <div class="flex items-center gap-3">
+                        <span><span class="text-gray-400">FPS:</span> <span id="statsFps">0</span></span>
+                        <span><span class="text-gray-400">Bitrate:</span> <span id="statsBitrate">0</span> kbps</span>
+                    </div>
+                </div>
             </div>
             <video autoplay playsinline class="h-full w-full object-cover"></video>
         </div>
@@ -36,12 +45,7 @@
         <!-- Settings Panel -->
         <div class="bg-gray-900 rounded-2xl p-5 shadow-2xl border border-gray-800 w-72">
             <h2 class="text-white font-semibold text-lg mb-4 flex items-center gap-2">
-                <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <i class='bx bx-cog'></i> 
                 Stream Settings
             </h2>
 
@@ -50,32 +54,34 @@
                 <label class="text-gray-400 text-sm mb-2 block">Resolution</label>
                 <select id="resolution"
                     class="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none">
-                    <option value="480">480p (SD)</option>
-                    <option value="720" selected>720p (HD)</option>
-                    <option value="1080">1080p (FHD)</option>
-                    <option value="1440">1440p (2K)</option>
+                    <option value="0">Original</option>
+                    <option value="1">480p (SD)</option>
+                    <option value="2">720p (HD)</option>
+                    <option value="3">1080p (FHD)</option>
                 </select>
             </div>
 
             <!-- FPS -->
             <div class="mb-4">
-                <label class="text-gray-400 text-sm mb-2 block">Frame Rate</label>
+                <label class="text-gray-400 text-sm mb-2 block">FPS</label>
                 <div class="flex gap-2">
                     <button data-fps="15"
                         class="fps-btn flex-1 py-2 rounded-lg bg-gray-800 text-gray-400 border border-gray-700 hover:border-blue-500 transition-all">15</button>
                     <button data-fps="30"
-                        class="fps-btn flex-1 py-2 rounded-lg bg-blue-600 text-white border border-blue-600">30</button>
+                        class="fps-btn flex-1 py-2 rounded-lg bg-gray-800 text-gray-400 border border-gray-700 hover:border-blue-500 transition-all">30</button>
                     <button data-fps="60"
                         class="fps-btn flex-1 py-2 rounded-lg bg-gray-800 text-gray-400 border border-gray-700 hover:border-blue-500 transition-all">60</button>
+                    <button data-fps="90"
+                        class="fps-btn flex-1 py-2 rounded-lg bg-gray-800 text-gray-400 border border-gray-700 hover:border-blue-500 transition-all">90</button>
                 </div>
             </div>
 
             <!-- Bitrate -->
             <div class="mb-4">
                 <label class="text-gray-400 text-sm mb-2 block">
-                    Bitrate: <span id="bitrateValue" class="text-white font-medium">2.5</span> Mbps
+                    Bitrate: <span id="bitrateValue" class="text-white font-medium"></span> Mbps
                 </label>
-                <input type="range" id="bitrate" min="500" max="8000" value="2500" step="100"
+                <input type="range" id="bitrate" min="500" max="8000" step="500"
                     class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600">
                 <div class="flex justify-between text-xs text-gray-500 mt-1">
                     <span>0.5</span>
@@ -83,29 +89,31 @@
                 </div>
             </div>
 
+            <!-- Show Stats Toggle -->
+            <div class="mb-4 flex items-center justify-between">
+                <label class="text-gray-400 text-sm">Show Stats</label>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="statsToggle" class="sr-only peer" checked>
+                    <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+            </div>
+
             <!-- Apply Button -->
             <button id="applyBtn"
                 class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Apply Settings
+                <i class='bx bx-refresh-ccw-alt'></i>
+                Apply
             </button>
-
-            <p class="text-gray-500 text-xs mt-3 text-center">
-                Settings will be applied on next stream
-            </p>
         </div>
     </div>
 
     <script>
         // Settings state
         const settings = {
-            resolution: 720,
-            fps: 30,
-            bitrate: 2500
+            quality: 0,
+            fps: 60,
+            bitrate: 3000
         };
 
         /** @type {RTCPeerConnection} */
@@ -126,6 +134,19 @@
         const bitrateSlider = document.getElementById('bitrate');
         const bitrateValue = document.getElementById('bitrateValue');
         const applyBtn = document.getElementById('applyBtn');
+        const statsPanel = document.getElementById('statsPanel');
+        const statsFps = document.getElementById('statsFps');
+        const statsBitrate = document.getElementById('statsBitrate');
+        const statsToggle = document.getElementById('statsToggle');
+
+        let statsInterval = null;
+        let lastBytesReceived = 0;
+        let lastTimestamp = 0;
+        let showStats = true;
+
+        bitrateSlider.value = settings.bitrate;
+        bitrateValue.textContent = `${settings.bitrate / 1000}`;
+        resolutionSelect.value = settings.quality;
 
         video.srcObject = mediaStream;
 
@@ -192,24 +213,30 @@
             enableApplyButton();
         });
 
+        statsToggle.addEventListener('change', (e) => {
+            showStats = e.target.checked;
+            if (isConnected) {
+                if (showStats) {
+                    statsPanel.classList.remove('hidden');
+                } else {
+                    statsPanel.classList.add('hidden');
+                }
+            }
+        });
+
         applyBtn.addEventListener('click', () => {
             socket.emit("settings_update", settings);
             applyBtn.disabled = true;
             applyBtn.innerHTML = `
-                <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
+                <i class='bx bx-checks text-green-400'></i>
                 Applied!
             `;
             setTimeout(() => {
                 applyBtn.innerHTML = `
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Apply Settings
+                    <i class='bx bx-refresh-ccw-alt'></i>
+                    Apply
                 `;
-            }, 2000);
+            }, 3000);
         });
 
         function enableApplyButton() {
@@ -231,10 +258,7 @@
                 if (!isConnected) {
                     callBtn.disabled = false;
                     callBtn.innerHTML = `
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
+                        <i class='bx bx-video'></i> 
                         Call
                     `;
                 }
@@ -242,8 +266,51 @@
         });
 
         function updateStatus(text, bgClass, textClass) {
-            statusBadge.className = `absolute top-3 left-3 z-20 px-2 py-1 rounded-full text-xs font-medium ${bgClass} ${textClass}`;
+            statusBadge.className = `px-2 py-1 rounded-full text-xs font-medium ${bgClass} ${textClass}`;
             statusBadge.textContent = text;
+        }
+
+
+
+        function startStatsMonitor() {
+            if (showStats) {
+                statsPanel.classList.remove('hidden');
+            }
+
+            statsInterval = setInterval(async () => {
+                if (!pc) return;
+                const stats = await pc.getStats();
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        const now = report.timestamp;
+                        const bytes = report.bytesReceived;
+
+                        if (lastTimestamp > 0) {
+                            const timeDiff = (now - lastTimestamp) / 1000;
+                            const bytesDiff = bytes - lastBytesReceived;
+                            const bitrate = Math.round((bytesDiff * 8) / timeDiff / 1000);
+                            statsBitrate.textContent = bitrate;
+                        }
+
+                        if (report.framesPerSecond) {
+                            statsFps.textContent = Math.round(report.framesPerSecond);
+                        }
+
+                        lastBytesReceived = bytes;
+                        lastTimestamp = now;
+                    }
+                });
+            }, 1000);
+        }
+
+        function stopStatsMonitor() {
+            if (statsInterval) {
+                clearInterval(statsInterval);
+                statsInterval = null;
+            }
+            statsPanel.classList.add('hidden');
+            lastBytesReceived = 0;
+            lastTimestamp = 0;
         }
 
         function createPeerConnection() {
@@ -267,29 +334,34 @@
                 mediaStream.addTrack(event.track);
             };
 
-            peerConnection.onconnectionstatechange = () => {
-                console.info("Connection state:", peerConnection.connectionState);
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit("ice_candidate", event.candidate);
+                }
+            };
 
-                switch (peerConnection.connectionState) {
-                    case "connecting":
+            peerConnection.oniceconnectionstatechange = () => {
+                console.info("Connection state:", peerConnection.iceConnectionState);
+
+                switch (peerConnection.iceConnectionState) {
+                    case "checking":
                         updateStatus("Connecting...", "bg-yellow-600", "text-white");
                         break;
                     case "connected":
                         isConnected = true;
                         callOverlay.classList.add('hidden');
                         updateStatus("Live", "bg-green-600", "text-white");
+                        startStatsMonitor();
                         break;
                     case "disconnected":
                     case "failed":
                         isConnected = false;
+                        stopStatsMonitor();
                         closePeerConnection();
                         callOverlay.classList.remove('hidden');
                         callBtn.disabled = false;
                         callBtn.innerHTML = `
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
+                            <i class='bx bx-video'></i> 
                             Call
                         `;
                         updateStatus("Disconnected", "bg-gray-700", "text-gray-300");

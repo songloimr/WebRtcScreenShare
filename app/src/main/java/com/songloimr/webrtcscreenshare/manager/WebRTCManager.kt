@@ -8,7 +8,10 @@ import android.os.Build
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
+import androidx.core.content.ContextCompat
 import com.songloimr.webrtcscreenshare.model.ConnectionState
+import com.songloimr.webrtcscreenshare.model.SettingsUpdateMessage
+import com.songloimr.webrtcscreenshare.model.VideoResolution
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.webrtc.DataChannel
 import org.webrtc.EglBase
@@ -159,7 +162,7 @@ class WebRTCManager(
         val parameters = transceiver?.sender?.parameters
 
         parameters?.encodings?.forEach { encoding ->
-            encoding.maxBitrateBps = TARGET_BITRATE_BPS
+//            encoding.maxBitrateBps = TARGET_BITRATE_BPS
             encoding.minBitrateBps = 500 * 1000
             encoding.maxFramerate = TARGET_FPS
         }
@@ -169,6 +172,50 @@ class WebRTCManager(
         transceiver?.sender?.parameters = parameters
 
         Log.d(TAG, "Screen capture track created")
+    }
+
+    fun switchResolution(settings: SettingsUpdateMessage) {
+
+        if (screenCapturer == null || peerConnection == null) {
+            return
+        }
+
+        try {
+            val resolution = VideoResolution.fromQuality(settings.quality)
+
+            var width = resolution.width
+            var height = resolution.height
+
+            if (resolution == VideoResolution.ORIGINAL) {
+                val wm = ContextCompat.getSystemService(context, WindowManager::class.java)
+
+                val displayMetrics = DisplayMetrics()
+                wm!!.defaultDisplay.getRealMetrics(displayMetrics)
+
+                width = displayMetrics.widthPixels
+                height = displayMetrics.heightPixels
+            }
+
+            screenCapturer!!.changeCaptureFormat(width, height, settings.fps)
+
+            val videoSender = peerConnection?.senders?.find {
+                it.track()?.kind() == MediaStreamTrack.VIDEO_TRACK_KIND
+            }
+            videoSender?.let { sender ->
+                val parameters = sender.parameters
+
+                for (encoding in parameters.encodings) {
+                    encoding.maxBitrateBps = settings.bitrate * 1000
+                    encoding.maxFramerate = settings.fps
+                }
+
+                sender.parameters = parameters
+            }
+
+            Log.d(TAG, "Resolution switched to: ${width}x${height} @${settings.fps}fps")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to switch resolution", e)
+        }
     }
 
     suspend fun createOffer(): Result<String> {
