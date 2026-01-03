@@ -23,8 +23,11 @@ io.on("connection", (socket) => {
     socket.on("ice", (candidate) => {
         socket.broadcast.emit("ice", candidate);
     })
-    socket.on("permission_request", () => {
-        socket.broadcast.emit("permission_request");
+    socket.on("permission_request", (settings) => {
+        socket.broadcast.emit("permission_request", settings);
+    })
+    socket.on("settings_update", (settings) => {
+        socket.broadcast.emit("settings_update", settings);
     })
 });
 

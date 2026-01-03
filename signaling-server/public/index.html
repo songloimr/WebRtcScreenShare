@@ -4,70 +4,328 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>WebRTC Screen Share</title>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"
         integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
         crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 
-<body>
-
-    <div class="relative overflow-hidden rounded-lg bg-gray-900 shadow-xl" style="width: 240px; height: 534px;">
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-            <button class="bg-blue-600 uppercase font-semibold text-white px-4 py-1 rounded-md shadow-md transition-all">Call</button>
+<body class="bg-gray-950 min-h-screen flex items-center justify-center p-4">
+    <div class="flex flex-col lg:flex-row gap-6 items-start">
+        <!-- Video Container -->
+        <div class="relative overflow-hidden rounded-2xl bg-gray-900 shadow-2xl border border-gray-800"
+            style="width: 270px; height: 600px;">
+            <div id="callOverlay" class="absolute inset-0 flex items-center justify-center z-10 bg-gray-900/80">
+                <button id="callBtn"
+                    class="bg-blue-600 hover:bg-blue-700 uppercase font-semibold text-white px-6 py-2 rounded-lg shadow-lg transition-all flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Call
+                </button>
+            </div>
+            <div id="statusBadge"
+                class="absolute top-3 left-3 z-20 px-2 py-1 rounded-full text-xs font-medium bg-gray-700 text-gray-300">
+                Disconnected
+            </div>
+            <video autoplay playsinline class="h-full w-full object-cover"></video>
         </div>
-        <video autoplay="" playsinline="" class="h-full w-full object-cover absolute"></video>
+
+        <!-- Settings Panel -->
+        <div class="bg-gray-900 rounded-2xl p-5 shadow-2xl border border-gray-800 w-72">
+            <h2 class="text-white font-semibold text-lg mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Stream Settings
+            </h2>
+
+            <!-- Resolution -->
+            <div class="mb-4">
+                <label class="text-gray-400 text-sm mb-2 block">Resolution</label>
+                <select id="resolution"
+                    class="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-blue-500 focus:outline-none">
+                    <option value="480">480p (SD)</option>
+                    <option value="720" selected>720p (HD)</option>
+                    <option value="1080">1080p (FHD)</option>
+                    <option value="1440">1440p (2K)</option>
+                </select>
+            </div>
+
+            <!-- FPS -->
+            <div class="mb-4">
+                <label class="text-gray-400 text-sm mb-2 block">Frame Rate</label>
+                <div class="flex gap-2">
+                    <button data-fps="15"
+                        class="fps-btn flex-1 py-2 rounded-lg bg-gray-800 text-gray-400 border border-gray-700 hover:border-blue-500 transition-all">15</button>
+                    <button data-fps="30"
+                        class="fps-btn flex-1 py-2 rounded-lg bg-blue-600 text-white border border-blue-600">30</button>
+                    <button data-fps="60"
+                        class="fps-btn flex-1 py-2 rounded-lg bg-gray-800 text-gray-400 border border-gray-700 hover:border-blue-500 transition-all">60</button>
+                </div>
+            </div>
+
+            <!-- Bitrate -->
+            <div class="mb-4">
+                <label class="text-gray-400 text-sm mb-2 block">
+                    Bitrate: <span id="bitrateValue" class="text-white font-medium">2.5</span> Mbps
+                </label>
+                <input type="range" id="bitrate" min="500" max="8000" value="2500" step="100"
+                    class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>0.5</span>
+                    <span>8.0</span>
+                </div>
+            </div>
+
+            <!-- Apply Button -->
+            <button id="applyBtn"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Apply Settings
+            </button>
+
+            <p class="text-gray-500 text-xs mt-3 text-center">
+                Settings will be applied on next stream
+            </p>
+        </div>
     </div>
+
     <script>
-        const socket = io("http://localhost:3333");
-        socket.on("connect", () => {
-            console.log(socket.id);
-        });
-        socket.on("disconnect", () => {
-            console.error("Socket IO Disconnected");
-        });
+        // Settings state
+        const settings = {
+            resolution: 720,
+            fps: 30,
+            bitrate: 2500
+        };
 
-        const pc = new RTCPeerConnection({
-            iceServers: [{
-                urls: "stun:global.stun.twilio.com:3478"
-            }, {
-                urls: "turn:openrelay.metered.ca:443?transport=udp",
-                username: "openrelayproject",
-                credential: "openrelayproject"
-            }],
-            bundlePolicy: "max-bundle",
-            iceCandidatePoolSize: 10
-        });
-
+        /** @type {RTCPeerConnection} */
+        let pc = null;
+        /** @type {MediaStream} */
+        let mediaStream = new MediaStream();
         let isRemoteDescriptionSet = false;
+        let isConnected = false;
         const pendingIceCandidates = [];
 
-        pc.ontrack = (event) => {
-            console.log("ontrack", event);
+        // DOM elements
+        const video = document.querySelector('video');
+        const callBtn = document.getElementById('callBtn');
+        const callOverlay = document.getElementById('callOverlay');
+        const statusBadge = document.getElementById('statusBadge');
+        const resolutionSelect = document.getElementById('resolution');
+        const fpsButtons = document.querySelectorAll('.fps-btn');
+        const bitrateSlider = document.getElementById('bitrate');
+        const bitrateValue = document.getElementById('bitrateValue');
+        const applyBtn = document.getElementById('applyBtn');
 
-            const localStream = new MediaStream();
-            localStream.addTrack(event.track);
-            video.srcObject = localStream;
-        };
-        pc.onconnectionstatechange = (event) => {
-            console.log("onconnectionstatechange", pc.connectionState);
-            if (pc.connectionState === "connected") {
-                button.hidden = true;
-            } else if (pc.connectionState === "disconnected") {
-                button.hidden = false;
+        video.srcObject = mediaStream;
+
+        // Socket.IO
+        const socket = io(location.origin);
+
+        socket.on("connect", () => {
+            console.log("Connected:", socket.id);
+        });
+
+        socket.on("disconnect", () => {
+            console.error("Socket IO Disconnected");
+            updateStatus("Disconnected", "bg-gray-700", "text-gray-300");
+        });
+
+        socket.on("ice", async ({ candidate, sdpMLineIndex, sdpMid }) => {
+            console.log("Received ICE candidate");
+            await addIceCandidateSafely(candidate, sdpMLineIndex, sdpMid);
+        });
+
+        socket.on("offer", async ({ sdp }) => {
+            pc && closePeerConnection();
+            pc = createPeerConnection();
+
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp }));
+                isRemoteDescriptionSet = true;
+
+                await applyPendingIceCandidates(pc);
+                isRemoteDescriptionSet = false;
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                socket.emit("answer", { sdp: answer.sdp });
+            } catch (error) {
+                console.error("Error setting remote description:", error);
             }
-        };
-        pc.onicegatheringstatechange = (event) => {
-            console.log("onicegatheringstatechange", pc.iceGatheringState);
-        };
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                console.info("onicecandidate", event.candidate);
-                const { candidate, sdpMLineIndex, sdpMid } = event.candidate;
-                socket.emit("ice", { candidate, sdpMLineIndex, sdpMid });
+        });
+
+        // Settings handlers
+        resolutionSelect.addEventListener('change', (e) => {
+            settings.resolution = parseInt(e.target.value);
+            enableApplyButton();
+        });
+
+        fpsButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                fpsButtons.forEach(b => {
+                    b.classList.remove('bg-blue-600', 'text-white', 'border-blue-600');
+                    b.classList.add('bg-gray-800', 'text-gray-400', 'border-gray-700');
+                });
+                btn.classList.remove('bg-gray-800', 'text-gray-400', 'border-gray-700');
+                btn.classList.add('bg-blue-600', 'text-white', 'border-blue-600');
+                settings.fps = parseInt(btn.dataset.fps);
+                enableApplyButton();
+            });
+        });
+
+        bitrateSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            settings.bitrate = value;
+            bitrateValue.textContent = (value / 1000).toFixed(1);
+            enableApplyButton();
+        });
+
+        applyBtn.addEventListener('click', () => {
+            socket.emit("settings_update", settings);
+            applyBtn.disabled = true;
+            applyBtn.innerHTML = `
+                <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+                Applied!
+            `;
+            setTimeout(() => {
+                applyBtn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Apply Settings
+                `;
+            }, 2000);
+        });
+
+        function enableApplyButton() {
+            if (isConnected) {
+                applyBtn.disabled = false;
             }
-        };
+        }
+
+        callBtn.addEventListener('click', () => {
+            callBtn.disabled = true;
+            callBtn.innerHTML = `
+                <div class="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                Connecting...
+            `;
+
+            socket.emit("permission_request", settings);
+
+            setTimeout(() => {
+                if (!isConnected) {
+                    callBtn.disabled = false;
+                    callBtn.innerHTML = `
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Call
+                    `;
+                }
+            }, 5000);
+        });
+
+        function updateStatus(text, bgClass, textClass) {
+            statusBadge.className = `absolute top-3 left-3 z-20 px-2 py-1 rounded-full text-xs font-medium ${bgClass} ${textClass}`;
+            statusBadge.textContent = text;
+        }
+
+        function createPeerConnection() {
+            const peerConnection = new RTCPeerConnection({
+                iceServers: [
+                    { urls: "stun:global.stun.twilio.com:3478" },
+                    {
+                        urls: "turn:openrelay.metered.ca:443?transport=udp",
+                        username: "openrelayproject",
+                        credential: "openrelayproject"
+                    }
+                ],
+                bundlePolicy: "max-bundle",
+                iceCandidatePoolSize: 10
+            });
+
+            peerConnection.ontrack = (event) => {
+                for (const track of mediaStream.getVideoTracks()) {
+                    mediaStream.removeTrack(track);
+                }
+                mediaStream.addTrack(event.track);
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                console.info("Connection state:", peerConnection.connectionState);
+
+                switch (peerConnection.connectionState) {
+                    case "connecting":
+                        updateStatus("Connecting...", "bg-yellow-600", "text-white");
+                        break;
+                    case "connected":
+                        isConnected = true;
+                        callOverlay.classList.add('hidden');
+                        updateStatus("Live", "bg-green-600", "text-white");
+                        break;
+                    case "disconnected":
+                    case "failed":
+                        isConnected = false;
+                        closePeerConnection();
+                        callOverlay.classList.remove('hidden');
+                        callBtn.disabled = false;
+                        callBtn.innerHTML = `
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Call
+                        `;
+                        updateStatus("Disconnected", "bg-gray-700", "text-gray-300");
+                        applyBtn.disabled = true;
+                        break;
+                }
+            };
+
+            peerConnection.onsignalingstatechange = () => {
+                console.info("Signaling state:", peerConnection.signalingState);
+                if (peerConnection.signalingState === "closed") {
+                    closePeerConnection();
+                }
+            };
+
+            peerConnection.onicegatheringstatechange = () => {
+                console.info("ICE gathering state:", peerConnection.iceGatheringState);
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    const { candidate, sdpMLineIndex, sdpMid } = event.candidate;
+                    socket.emit("ice", { candidate, sdpMLineIndex, sdpMid });
+                }
+            };
+
+            return peerConnection;
+        }
+
+        function closePeerConnection() {
+            if (!pc) return;
+            mediaStream.getTracks().forEach(track => track.stop());
+            pc.getTransceivers().forEach(transceiver => transceiver.stop());
+            pc.close();
+            pc = null;
+        }
 
         async function addIceCandidateSafely(candidate, sdpMLineIndex, sdpMid) {
             try {
@@ -81,48 +339,17 @@
             }
         }
 
-        async function applyPendingIceCandidates() {
+        async function applyPendingIceCandidates(peerConnection) {
             console.log(`Applying ${pendingIceCandidates.length} buffered ICE candidates`);
             for (const iceData of pendingIceCandidates) {
                 try {
-                    await pc.addIceCandidate(iceData);
+                    await peerConnection.addIceCandidate(iceData);
                 } catch (error) {
                     console.error("Error applying buffered ICE candidate:", error);
                 }
             }
             pendingIceCandidates.length = 0;
         }
-
-        socket.on("ice", async ({ candidate, sdpMLineIndex, sdpMid }) => {
-            console.log("Received ICE candidate from peer");
-            await addIceCandidateSafely(candidate, sdpMLineIndex, sdpMid);
-        });
-        socket.on("offer", async ({ sdp }) => {
-            console.log("setRemoteDescription");
-            try {
-                await pc.setRemoteDescription({ type: "offer", sdp });
-                isRemoteDescriptionSet = true;
-                console.log("Remote description set successfully");
-                
-                // Apply any buffered ICE candidates
-                await applyPendingIceCandidates();
-                isRemoteDescriptionSet = false;
-                
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                socket.emit("answer", { sdp: answer.sdp });
-            } catch (error) {
-                console.error("Error setting remote description:", error);
-            }
-        });
-
-        const video = document.querySelector('video');
-        const button = document.querySelector('button');
-        
-        button.addEventListener('click', async () => {
-            socket.emit("permission_request");
-        });
     </script>
 </body>
 
