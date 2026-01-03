@@ -1,16 +1,20 @@
 package com.songloimr.webrtcscreenshare
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.Settings
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -86,6 +90,8 @@ class MainActivity : AppCompatActivity() {
                 requestOverlayPermission()
             }
         }
+
+        requestNotificationPermission()
     }
 
     override fun onResume() {
@@ -106,6 +112,22 @@ class MainActivity : AppCompatActivity() {
             start(data)
             Intent(this, ScreenRecordingService::class.java).also { intent ->
                 bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            }
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    100
+                )
             }
         }
     }
