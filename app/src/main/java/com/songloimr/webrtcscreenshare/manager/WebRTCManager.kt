@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Context.WINDOW_SERVICE
 import android.content.Intent
 import android.media.projection.MediaProjection
+import android.os.Build
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
@@ -19,12 +20,14 @@ import org.webrtc.MediaStream
 import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RtpParameters
 import org.webrtc.RtpReceiver
 import org.webrtc.RtpTransceiver
 import org.webrtc.ScreenCapturerAndroid
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
+import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import java.util.regex.Pattern
 import kotlin.coroutines.resume
@@ -50,9 +53,6 @@ class WebRTCManager(
         SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
     }
 
-    private var isInitialized = false
-
-
     private val eglBase: EglBase by lazy {
         EglBase.create()
     }
@@ -76,10 +76,10 @@ class WebRTCManager(
             PeerConnectionFactory.builder()
                 .setVideoEncoderFactory(encoderFactory)
                 .setVideoDecoderFactory(decoderFactory)
-                .setOptions(PeerConnectionFactory.Options()).createPeerConnectionFactory()
+                .setOptions(PeerConnectionFactory.Options())
+                .createPeerConnectionFactory()
 
-        isInitialized = true
-        Log.d(TAG, "WebRTCManager initialized with H264 codec preference")
+        Log.d(TAG, "WebRTCManager initialized")
     }
 
     fun createPeerConnection(
@@ -329,8 +329,6 @@ class WebRTCManager(
         // Release EglBase
         eglBase.release()
 
-        isInitialized = false
-
         Log.d(TAG, "WebRTCManager released")
     }
 
@@ -348,27 +346,28 @@ class WebRTCManager(
             }
 
             override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
-                Log.d(TAG, "Connection state changed: $newState")
-                when (newState) {
-                    PeerConnection.PeerConnectionState.CONNECTED -> {
-                        onConnectionStateChange(ConnectionState.Connected)
-                    }
-
-                    PeerConnection.PeerConnectionState.DISCONNECTED -> {
-                        onConnectionStateChange(ConnectionState.Disconnected("Peer disconnected"))
-                    }
-
-                    PeerConnection.PeerConnectionState.FAILED -> {
-                        onConnectionStateChange(ConnectionState.Error(Exception("ICE connection failed")))
-                    }
-
-                    else -> { /* Ignore other states */
-                    }
-                }
             }
 
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
                 Log.d(TAG, "ICE connection state: $state")
+
+                when (state) {
+                    PeerConnection.IceConnectionState.CONNECTED -> {
+                        onConnectionStateChange(ConnectionState.Connected)
+                    }
+
+                    PeerConnection.IceConnectionState.DISCONNECTED -> {
+                        peerConnection?.restartIce()
+                        onConnectionStateChange(ConnectionState.Disconnected("ICE connection closed"))
+                    }
+
+                    PeerConnection.IceConnectionState.FAILED -> {
+                        peerConnection?.restartIce()
+                        onConnectionStateChange(ConnectionState.Error(Exception("ICE connection failed")))
+                    }
+
+                    else -> {}
+                }
             }
 
             override fun onIceConnectionReceivingChange(receiving: Boolean) {
