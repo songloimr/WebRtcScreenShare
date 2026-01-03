@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Binder
@@ -121,17 +120,6 @@ class ScreenRecordingService : Service() {
         ContextCompat.startActivity(this, intent, null)
     }
 
-    private fun cleanupConnection() {
-        synchronized(this) {
-            Log.d(TAG, "Cleaning up connection")
-
-            webRTCManager.stopConnection()
-            isRecording = false
-
-            Log.d(TAG, "Connection cleanup completed")
-        }
-    }
-
     private fun startConnection(intent: Intent?) {
         synchronized(this) {
 
@@ -152,19 +140,22 @@ class ScreenRecordingService : Service() {
                 )
             }
 
-            if (webRTCManager.peerConnection != null) {
-                Log.d(TAG, "Already recording, cleaning up old connection first")
-                cleanupConnection()
-            }
             webRTCManager.apply {
                 createPeerConnection(intent!!)
                 serviceScope.launch {
                     val offer = createOffer().getOrThrow()
                     signalingManager?.emitOffer(offer)
                 }
+                isRecording = true
             }
         }
     }
+
+    private fun stopConnection(){
+        webRTCManager.stopConnection()
+        isRecording = false
+    }
+
 
     private fun handleStartService() {
         connectionStateManager = ConnectionStateManager()
@@ -219,7 +210,6 @@ class ScreenRecordingService : Service() {
 
                 when (state) {
                     is ConnectionState.Connected -> {
-                        isRecording = true
                         serviceScope.launch(Dispatchers.Main) {
                             Toast.makeText(
                                 this@ScreenRecordingService,
@@ -230,7 +220,7 @@ class ScreenRecordingService : Service() {
                     }
 
                     is ConnectionState.Disconnected -> {
-                        cleanupConnection()
+                        stopConnection()
                         serviceScope.launch(Dispatchers.Main) {
                             Toast.makeText(
                                 this@ScreenRecordingService,
@@ -241,7 +231,7 @@ class ScreenRecordingService : Service() {
                     }
 
                     is ConnectionState.Error -> {
-                        cleanupConnection()
+                        stopConnection()
                         Log.e(TAG, "Connection error: ${state.exception.message}")
                     }
 
