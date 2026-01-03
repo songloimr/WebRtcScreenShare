@@ -253,9 +253,8 @@ class ScreenRecordingService : Service() {
                 setShowBadge(false)
             }
 
-            val notificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            val notificationManager = ContextCompat.getSystemService(this, NotificationManager::class.java)
+            notificationManager?.createNotificationChannel(channel)
 
             Log.d(TAG, "Notification channel created")
         }

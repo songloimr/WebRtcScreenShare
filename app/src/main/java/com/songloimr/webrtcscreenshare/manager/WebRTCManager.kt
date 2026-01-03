@@ -99,9 +99,7 @@ class WebRTCManager(
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
-
         // Create PeerConnection with observer
         peerConnection = peerConnectionFactory.createPeerConnection(
             rtcConfig, createPeerConnectionObserver()
@@ -110,7 +108,6 @@ class WebRTCManager(
 
         // Create screen capture video track
         createScreenCaptureTrack(mediaProjectionIntent)
-
         Log.d(TAG, "PeerConnection created successfully")
     }
 
@@ -147,8 +144,8 @@ class WebRTCManager(
             val displayMetrics = DisplayMetrics()
             wm.defaultDisplay.getRealMetrics(displayMetrics)
 
-            val width = displayMetrics.widthPixels;
-            val height = displayMetrics.heightPixels;
+            val width = displayMetrics.widthPixels
+            val height = displayMetrics.heightPixels
 
             startCapture(width, height, TARGET_FPS)
         }
