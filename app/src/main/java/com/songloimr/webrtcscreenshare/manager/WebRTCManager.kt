@@ -90,23 +90,23 @@ class WebRTCManager(
         mediaProjectionIntent: Intent
     ) {
         if (peerConnection == null) {
-        // Create ICE servers configuration
-        val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
-            PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=udp").apply {
-                setUsername("openrelayproject")
-                setPassword("openrelayproject")
-            }.createIceServer()
-        )
+            // Create ICE servers configuration
+            val iceServers = listOf(
+                PeerConnection.IceServer.builder("stun:global.stun.twilio.com:3478").createIceServer(),
+                PeerConnection.IceServer.builder("turn:openrelay.metered.ca:443?transport=udp").apply {
+                    setUsername("openrelayproject")
+                    setPassword("openrelayproject")
+                }.createIceServer()
+            )
 
-        val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
-            bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
-            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-        }
-        // Create PeerConnection with observer
-        peerConnection = peerConnectionFactory.createPeerConnection(
-            rtcConfig, createPeerConnectionObserver()
-        )
+            val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
+                bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
+                sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            }
+            // Create PeerConnection with observer
+            peerConnection = peerConnectionFactory.createPeerConnection(
+                rtcConfig, createPeerConnectionObserver()
+            )
         }
 
         // Create screen capture video track
