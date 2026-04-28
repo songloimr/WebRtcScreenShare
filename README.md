@@ -67,7 +67,12 @@ npm start
 
 ### 2. Open Web Client
 - Open browser and navigate to `http://localhost:3333`
-- Click "Call" button to prepare for receiving stream
+- Configure stream settings (optional):
+  - **Resolution**: Choose between 480p, 720p (default), 1080p, or 1440p
+  - **Frame Rate**: Select 15, 30 (default), or 60 FPS
+  - **Bitrate**: Adjust from 0.5 to 8.0 Mbps using the slider
+  - **Show Stats**: Toggle to display real-time FPS and bitrate statistics
+- Click "Call" button to initiate connection
 
 ### 3. Use Android Application
 1. Open the application
@@ -75,11 +80,20 @@ npm start
 3. Grant screen recording permission when prompted
 4. Screen will be shared via WebRTC to web client
 
+### 4. Adjust Settings (Optional)
+- While streaming, you can modify resolution, FPS, or bitrate settings
+- Click "Apply Settings" to send new configuration to the Android app
+- Settings will take effect on the next stream session
+
 ## Notes
 
 - Application requires screen recording permission
 - Signaling server is required to establish WebRTC connection
 - Works best on Android 6.0+
+- **Web Client Features**:
+  - Real-time stream quality monitoring (FPS and bitrate)
+  - Dynamic quality adjustment during streaming
+  - Connection status indicators with visual feedback
 - For production use, consider deploying the signaling server to a cloud service (Heroku, AWS, etc.)
 - When using ngrok, the free tier has connection limits and the URL changes on restart
 
