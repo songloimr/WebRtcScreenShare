@@ -201,7 +201,7 @@ class ScreenRecordingService : Service() {
                 connectionStateManager.setState(ConnectionState.Error(exception))
             }
         ).apply {
-            connect("https://32e160303c09.ngrok-free.app")
+            connect("https://7eae8b24ca2f.ngrok-free.app")
         }
         observeConnectionState()
     }
